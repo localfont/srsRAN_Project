@@ -20,47 +20,45 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build \
+            cmake ninja-build git wget \
             gcc-12 g++-12 \
-            libfftw3-dev libfftw3-bin \
+            libfftw3-dev \
             libmbedtls-dev \
-            libsctp-dev \
+            libsctp-dev lksctp-tools \
             libzmq3-dev libczmq-dev \
-            libconfig++-dev \
             libyaml-cpp-dev \
             libgtest-dev \
-            libunwind-dev libdw-dev \
+            libunwind-dev libdw-dev libelf-dev \
             libboost-program-options-dev \
-            patchelf \
-            file
+            libsodium-dev \
+            libnorm-dev libpgm-dev \
+            libgssapi-krb5-2 libkrb5-dev \
+            libbsd-dev \
+            patchelf file
 
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
           sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
 
-      - name: Statik Arşivleri Doğrula / Derle
+      - name: Statik Arşivleri Kaynaktan Derle
         run: |
+          set -e
+
           check_static() {
-            lib=$1
-            found=$(find /usr -name "lib${lib}.a" 2>/dev/null | head -1)
-            if [ -z "$found" ]; then
-              echo "UYARI: lib${lib}.a bulunamadı – kaynaktan derlenecek."
-              return 1
-            fi
-            echo "OK: lib${lib}.a → $found"
-            return 0
+            found=$(find /usr /usr/local -name "lib${1}.a" 2>/dev/null | head -1)
+            [ -n "$found" ] && echo "OK: lib${1}.a -> $found" && return 0
+            echo "MISSING: lib${1}.a – kaynaktan derlenecek"
+            return 1
           }
 
-          check_static fftw3 || {
+          check_static fftw3f || {
             wget -q https://www.fftw.org/fftw-3.3.10.tar.gz
-            tar xf fftw-3.3.10.tar.gz
-            cd fftw-3.3.10
+            tar xf fftw-3.3.10.tar.gz && cd fftw-3.3.10
             ./configure --enable-static --disable-shared --enable-float \
                         --enable-sse2 --enable-avx --enable-avx2 --prefix=/usr/local
-            make -j$(nproc) && sudo make install
-            cd ..
+            make -j$(nproc) && sudo make install && cd ..
           }
 
-          check_static mbedtls || {
+          check_static mbedcrypto || {
             git clone --depth 1 --branch v3.4.0 \
               https://github.com/Mbed-TLS/mbedtls.git mbedtls-src
             cmake -S mbedtls-src -B mbedtls-build \
@@ -73,6 +71,56 @@ jobs:
             sudo cmake --install mbedtls-build
           }
 
+          check_static zmq || {
+            git clone --depth 1 --branch v4.3.5 \
+              https://github.com/zeromq/libzmq.git zmq-src
+            cmake -S zmq-src -B zmq-build \
+              -DBUILD_STATIC=ON \
+              -DBUILD_SHARED=OFF \
+              -DWITH_LIBSODIUM=OFF \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr/local
+            cmake --build zmq-build -j$(nproc)
+            sudo cmake --install zmq-build
+          }
+
+          check_static yaml-cpp || {
+            git clone --depth 1 --branch yaml-cpp-0.7.0 \
+              https://github.com/jbeder/yaml-cpp.git yaml-src
+            cmake -S yaml-src -B yaml-build \
+              -DYAML_CPP_BUILD_TESTS=OFF \
+              -DBUILD_SHARED_LIBS=OFF \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr/local
+            cmake --build yaml-build -j$(nproc)
+            sudo cmake --install yaml-build
+          }
+
+          check_static dw || {
+            wget -q https://sourceware.org/elfutils/ftp/0.190/elfutils-0.190.tar.bz2
+            tar xf elfutils-0.190.tar.bz2 && cd elfutils-0.190
+            ./configure --enable-static --disable-shared \
+                        --disable-debuginfod --disable-libdebuginfod \
+                        --prefix=/usr/local
+            make -j$(nproc) && sudo make install && cd ..
+          }
+
+          check_static sctp || {
+            git clone --depth 1 https://github.com/sctplab/usrsctp.git usrsctp-src
+            cmake -S usrsctp-src -B usrsctp-build \
+              -Dsctp_build_shared_lib=OFF \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr/local
+            cmake --build usrsctp-build -j$(nproc)
+            sudo cmake --install usrsctp-build
+          }
+
+          echo "=== Statik arşiv kontrolü ==="
+          for lib in fftw3f mbedcrypto zmq yaml-cpp dw; do
+            find /usr /usr/local -name "lib${lib}.a" 2>/dev/null | head -1 \
+              || echo "HATA: lib${lib}.a hâlâ bulunamadı!"
+          done
+
       - name: CMake Yapılandır
         run: |
           cmake -S . -B build \
@@ -80,18 +128,12 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc-12 \
             -DCMAKE_CXX_COMPILER=g++-12 \
-            \
             -DENABLE_ZEROMQ=ON \
             -DENABLE_WERROR=OFF \
-            \
             -DBUILD_SHARED_LIBS=OFF \
-            \
-            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,--as-needed" \
-            \
             -DCMAKE_FIND_LIBRARY_SUFFIXES=".a;.so" \
-            -DFFTW3_INCLUDE_DIRS=/usr/local/include \
-            -DFFTW3_LIBRARIES=/usr/local/lib/libfftw3f.a \
-            \
+            -DCMAKE_PREFIX_PATH="/usr/local" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,--as-needed -Wl,-Bstatic -lzmq -lmbedcrypto -lmbedtls -lmbedx509 -lfftw3f -lyaml-cpp -ldw -lelf -Wl,-Bdynamic" \
             -DCMAKE_INSTALL_PREFIX=/opt/srsran
 
       - name: Derle
@@ -108,20 +150,17 @@ jobs:
             echo ""
             echo "▶ $bin"
             file "$bin"
-            echo "  Dış bağımlılıklar (shared libs):"
-            ldd "$bin" 2>/dev/null | grep -v "statically linked" \
-              | grep -v "linux-vdso\|ld-linux\|libm\|libc\|libpthread\|librt\|libdl" \
-              || echo "  → Yalnızca sistem libs (kabul edilebilir)"
+            echo "  Beklenmedik shared lib bağımlılıkları:"
+            ldd "$bin" 2>/dev/null \
+              | grep -v "linux-vdso\|ld-linux\|libm\.so\|libc\.so\|libpthread\|librt\|libdl\|statically linked" \
+              && echo "  UYARI: Yukarıdaki shared lib'ler taşınabilirliği kırar!" \
+              || echo "  TEMIZ: Yalnızca temel sistem libs"
           done
 
-      - name: Binary'leri Paketle
+      - name: Binaryleri Paketle
         run: |
           mkdir -p dist
-          for bin in srsenb srsue srsepc; do
-            found=$(find build -name "$bin" -type f -executable | head -1)
-            [ -n "$found" ] && cp "$found" dist/ && echo "Kopyalandı: $bin"
-          done
-          for bin in gnb ue; do
+          for bin in srsenb srsue srsepc gnb ue; do
             found=$(find build -name "$bin" -type f -executable | head -1)
             [ -n "$found" ] && cp "$found" dist/ && echo "Kopyalandı: $bin"
           done
