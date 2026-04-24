@@ -20,14 +20,14 @@ jobs:
         sudo apt install -y cmake make gcc g++ \
           libfftw3-dev libmbedtls-dev libsctp-dev \
           libzmq3-dev libczmq-dev libconfig++-dev \
-          libyaml-cpp-dev libgtest-dev # <--- yaml-cpp buraya eklendi
-
+          libyaml-cpp-dev libgtest-dev 
+          
     - name: Derleme Klasörünü Oluştur
       run: mkdir build
 
     - name: CMake Yapılandırması
       working-directory: ./build
-      run: cmake ../ -DENABLE_ZEROMQ=ON
+      run: cmake ../ -DENABLE_ZEROMQ=ON -DENABLE_UHD=OFF
 
     - name: Derlemeyi Başlat (Make)
       working-directory: ./build
