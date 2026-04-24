@@ -14,10 +14,13 @@ jobs:
     - name: Kodu Çek
       uses: actions/checkout@v3
 
-    - name: Bağımlılıkları Yükle
+  - name: Bağımlılıkları Yükle
       run: |
         sudo apt update
-        sudo apt install -y cmake make gcc g++ libfftw3-dev libmbedtls-dev libsctp-dev libzmq3-dev libczmq-dev libconfig++-dev
+        sudo apt install -y cmake make gcc g++ \
+          libfftw3-dev libmbedtls-dev libsctp-dev \
+          libzmq3-dev libczmq-dev libconfig++-dev \
+          libyaml-cpp-dev libgtest-dev # <--- yaml-cpp buraya eklendi
 
     - name: Derleme Klasörünü Oluştur
       run: mkdir build
