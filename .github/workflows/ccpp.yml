@@ -5,33 +5,30 @@ on:
     branches: [ "master", "main" ]
   pull_request:
     branches: [ "master", "main" ]
+
 jobs:
   build:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Kodu Çek
-      uses: actions/checkout@v4
-      
-  - name: Bağımlılıkları Yükle
-      run: |
-        sudo apt update
-        sudo apt install -y cmake make gcc g++ \
-          libfftw3-dev libmbedtls-dev libsctp-dev \
-          libzmq3-dev libczmq-dev libconfig++-dev \
-          libyaml-cpp-dev libgtest-dev 
-          
-    - name: Derleme Klasörünü Oluştur
-      run: mkdir build
+      - name: Kodu Çek
+        uses: actions/checkout@v4
 
-    - name: CMake Yapılandırması
-      working-directory: ./build
-      run: cmake ../ -DENABLE_ZEROMQ=ON -DENABLE_UHD=OFF
+      - name: Bağımlılıkları Yükle
+        run: |
+          sudo apt update
+          sudo apt install -y cmake make gcc g++ \
+            libfftw3-dev libmbedtls-dev libsctp-dev \
+            libzmq3-dev libczmq-dev libconfig++-dev \
+            libyaml-cpp-dev libgtest-dev
 
-    - name: Derlemeyi Başlat (Make)
-      working-directory: ./build
-      run: make -j$(nproc)
+      - name: Derleme Klasörünü Oluştur
+        run: mkdir build
 
-    - name: Başarı Kontrolü
-      run: echo "Derleme başarıyla tamamlandı!"
-      
+      - name: CMake Yapılandırması
+        working-directory: ./build
+        run: cmake ../ -DENABLE_ZEROMQ=ON
+
+      - name: Derlemeyi Başlat (Make)
+        working-directory: ./build
+        run: make -j$(nproc)
