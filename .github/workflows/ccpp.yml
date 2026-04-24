@@ -32,3 +32,12 @@ jobs:
       - name: Derlemeyi Başlat (Make)
         working-directory: ./build
         run: make -j$(nproc)
+        
+    - name: Dosyaları Paketle ve Yükle (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: srsRAN-4G-Binaries
+          path: |
+            build/srsenb/src/srsenb
+            build/srsue/src/srsue
+            build/srsepc/src/srsepc
