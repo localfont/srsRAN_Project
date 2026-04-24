@@ -1,4 +1,4 @@
-name: srsRAN-Project Statik Derleme
+name: srsRAN 4G - Statik Taşınabilir Derleme
 
 on:
   push:
@@ -13,36 +13,133 @@ jobs:
     steps:
       - name: Kodu Çek
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Bağımlılıkları Yükle
+      - name: Sistem Bağımlılıklarını Yükle
         run: |
-          sudo apt update
-          sudo apt install -y cmake make gcc g++ \
-            libfftw3-dev libmbedtls-dev libsctp-dev \
-            libzmq3-dev libczmq-dev libconfig++-dev \
-            libyaml-cpp-dev libgtest-dev \
-            libunwind-dev libdw-dev libboost-program-options-dev
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build \
+            gcc-12 g++-12 \
+            libfftw3-dev libfftw3-bin \
+            libmbedtls-dev \
+            libsctp-dev \
+            libzmq3-dev libczmq-dev \
+            libconfig++-dev \
+            libyaml-cpp-dev \
+            libgtest-dev \
+            libunwind-dev libdw-dev \
+            libboost-program-options-dev \
+            patchelf \
+            file
 
-      - name: Derleme Klasörünü Oluştur
-        run: mkdir build
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 100
+          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-12 100
 
-      - name: CMake Yapılandırması (Statik Mod)
-        working-directory: ./build
+      - name: Statik Arşivleri Doğrula / Derle
         run: |
-          cmake ../ -DENABLE_ZEROMQ=ON \
-                    -DENABLE_STATIC=ON \
-                    -DCMAKE_BUILD_TYPE=Release \
-                    -DENABLE_WERROR=OFF
+          check_static() {
+            lib=$1
+            found=$(find /usr -name "lib${lib}.a" 2>/dev/null | head -1)
+            if [ -z "$found" ]; then
+              echo "UYARI: lib${lib}.a bulunamadı – kaynaktan derlenecek."
+              return 1
+            fi
+            echo "OK: lib${lib}.a → $found"
+            return 0
+          }
 
-      - name: Derlemeyi Başlat (Make)
-        working-directory: ./build
-        run: make -j$(nproc)
+          check_static fftw3 || {
+            wget -q https://www.fftw.org/fftw-3.3.10.tar.gz
+            tar xf fftw-3.3.10.tar.gz
+            cd fftw-3.3.10
+            ./configure --enable-static --disable-shared --enable-float \
+                        --enable-sse2 --enable-avx --enable-avx2 --prefix=/usr/local
+            make -j$(nproc) && sudo make install
+            cd ..
+          }
 
-      - name: Dosyaları Paketle ve Yükle (Artifact)
+          check_static mbedtls || {
+            git clone --depth 1 --branch v3.4.0 \
+              https://github.com/Mbed-TLS/mbedtls.git mbedtls-src
+            cmake -S mbedtls-src -B mbedtls-build \
+              -DENABLE_TESTING=OFF \
+              -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
+              -DUSE_STATIC_MBEDTLS_LIBRARY=ON \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_INSTALL_PREFIX=/usr/local
+            cmake --build mbedtls-build -j$(nproc)
+            sudo cmake --install mbedtls-build
+          }
+
+      - name: CMake Yapılandır
+        run: |
+          cmake -S . -B build \
+            -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc-12 \
+            -DCMAKE_CXX_COMPILER=g++-12 \
+            \
+            -DENABLE_ZEROMQ=ON \
+            -DENABLE_WERROR=OFF \
+            \
+            -DBUILD_SHARED_LIBS=OFF \
+            \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++ -Wl,--as-needed" \
+            \
+            -DCMAKE_FIND_LIBRARY_SUFFIXES=".a;.so" \
+            -DFFTW3_INCLUDE_DIRS=/usr/local/include \
+            -DFFTW3_LIBRARIES=/usr/local/lib/libfftw3f.a \
+            \
+            -DCMAKE_INSTALL_PREFIX=/opt/srsran
+
+      - name: Derle
+        run: |
+          cmake --build build --parallel $(nproc) 2>&1 | tee build/build.log
+          echo "Exit: $?"
+
+      - name: Binary Bağımlılıklarını Doğrula
+        run: |
+          echo "=== Bulunan binary'ler ==="
+          find build -maxdepth 4 -type f -executable \
+            \( -name "srsenb" -o -name "srsue" -o -name "srsepc" \
+               -o -name "gnb"  -o -name "ue" \) | while read bin; do
+            echo ""
+            echo "▶ $bin"
+            file "$bin"
+            echo "  Dış bağımlılıklar (shared libs):"
+            ldd "$bin" 2>/dev/null | grep -v "statically linked" \
+              | grep -v "linux-vdso\|ld-linux\|libm\|libc\|libpthread\|librt\|libdl" \
+              || echo "  → Yalnızca sistem libs (kabul edilebilir)"
+          done
+
+      - name: Binary'leri Paketle
+        run: |
+          mkdir -p dist
+          for bin in srsenb srsue srsepc; do
+            found=$(find build -name "$bin" -type f -executable | head -1)
+            [ -n "$found" ] && cp "$found" dist/ && echo "Kopyalandı: $bin"
+          done
+          for bin in gnb ue; do
+            found=$(find build -name "$bin" -type f -executable | head -1)
+            [ -n "$found" ] && cp "$found" dist/ && echo "Kopyalandı: $bin"
+          done
+          ls -lh dist/
+          [ "$(ls -A dist)" ] || { echo "HATA: Hiç binary bulunamadı!"; exit 1; }
+
+      - name: Artifact Yükle
         uses: actions/upload-artifact@v4
         with:
-          name: srsRAN-Project-Static-Binaries
-          path: |
-            build/apps/gnb/gnb
-            build/apps/ue/ue
+          name: srsRAN-Static-Binaries-${{ github.sha }}
+          path: dist/
           if-no-files-found: error
+          retention-days: 30
+
+      - name: Build Logunu Yükle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.sha }}
+          path: build/build.log
+          if-no-files-found: ignore
