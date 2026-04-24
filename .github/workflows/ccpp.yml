@@ -13,21 +13,26 @@ jobs:
     steps:
       - name: Kodu Çek
         uses: actions/checkout@v4
-
-      - name: Bağımlılıkları Yükle
+        
+     - name: Bağımlılıkları Yükle
         run: |
           sudo apt update
           sudo apt install -y cmake make gcc g++ \
             libfftw3-dev libmbedtls-dev libsctp-dev \
             libzmq3-dev libczmq-dev libconfig++-dev \
-            libyaml-cpp-dev libgtest-dev
+            libyaml-cpp-dev libgtest-dev \
+            libunwind-dev libdw-dev # Hata ayıklama için statik destekleri
 
       - name: Derleme Klasörünü Oluştur
         run: mkdir build
 
-      - name: CMake Yapılandırması
+      - name: CMake Yapılandırması (Statik)
         working-directory: ./build
-        run: cmake ../ -DENABLE_ZEROMQ=ON
+        run: |
+          cmake ../ -DENABLE_ZEROMQ=ON \
+                    -DENABLE_STATIC=ON \
+                    -DENABLE_WERROR=OFF \
+                    -DCMAKE_BUILD_TYPE=Release
 
       - name: Derlemeyi Başlat (Make)
         working-directory: ./build
