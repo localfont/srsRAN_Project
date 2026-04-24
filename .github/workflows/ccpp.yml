@@ -36,8 +36,8 @@ jobs:
       - name: Dosyaları Paketle ve Yükle (Artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: srsRAN-4G-Binaries
+          name: srsRAN-Project-Binaries
           path: |
-            build/srsenb/src/srsenb
-            build/srsue/src/srsue
-            build/srsepc/src/srsepc
+            build/apps/gnb/gnb
+            build/apps/ue/ue
+          if-no-files-found: error # Dosya bulunamazsa hata ver ki nerede olduğunu görelim
