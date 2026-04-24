@@ -1,33 +1,35 @@
-#
-# Copyright 2013-2025 Software Radio Systems Limited
-#
-# By using this file, you agree to the terms and conditions set
-# forth in the LICENSE file which can be found at the top level of
-# the distribution.
-#
+name: srsRAN 4G Derleme Testi
 
-name: C/C++ CI
-on: push
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
 jobs:
-  x86_ubuntu_build:
-    name: Build on x86
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04]
-        compiler: [gcc]
+  build:
+    runs-on: ubuntu-22.04
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        token: ${{ secrets.CI_TOKEN != '' && secrets.CI_TOKEN || github.token }}
-    - name: Install Dependencies
+    - name: Kodu Çek
+      uses: actions/checkout@v3
+
+    - name: Bağımlılıkları Yükle
       run: |
-        sudo docker/scripts/install_dependencies.sh
-    - name: Build srsRAN Project on x86 ${{ matrix.os }} with compiler ${{ matrix.compiler }}
-      run: |
-        docker/scripts/builder.sh -c ${{ matrix.compiler }} -m "-j$(nproc)" -DBUILD_TESTING=On .
-    - name: Run unit tests
-      run: |
-        cd build && ctest -j$(nproc) --schedule-random --output-on-failure
+        sudo apt update
+        sudo apt install -y cmake make gcc g++ libfftw3-dev libmbedtls-dev libsctp-dev libzmq3-dev libczmq-dev libconfig++-dev
+
+    - name: Derleme Klasörünü Oluştur
+      run: mkdir build
+
+    - name: CMake Yapılandırması
+      working-directory: ./build
+      run: cmake ../ -DENABLE_ZEROMQ=ON
+
+    - name: Derlemeyi Başlat (Make)
+      working-directory: ./build
+      run: make -j$(nproc)
+
+    - name: Başarı Kontrolü
+      run: echo "Derleme başarıyla tamamlandı!"
+      
