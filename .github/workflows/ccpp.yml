@@ -1,4 +1,4 @@
-name: srsRAN 4G Derleme Testi
+name: srsRAN-Project Statik Derleme
 
 on:
   push:
@@ -13,26 +13,26 @@ jobs:
     steps:
       - name: Kodu Çek
         uses: actions/checkout@v4
-        
-     - name: Bağımlılıkları Yükle
+
+      - name: Bağımlılıkları Yükle
         run: |
           sudo apt update
           sudo apt install -y cmake make gcc g++ \
             libfftw3-dev libmbedtls-dev libsctp-dev \
             libzmq3-dev libczmq-dev libconfig++-dev \
             libyaml-cpp-dev libgtest-dev \
-            libunwind-dev libdw-dev 
-            
+            libunwind-dev libdw-dev libboost-program-options-dev
+
       - name: Derleme Klasörünü Oluştur
         run: mkdir build
 
-      - name: CMake Yapılandırması (Statik)
+      - name: CMake Yapılandırması (Statik Mod)
         working-directory: ./build
         run: |
           cmake ../ -DENABLE_ZEROMQ=ON \
                     -DENABLE_STATIC=ON \
-                    -DENABLE_WERROR=OFF \
-                    -DCMAKE_BUILD_TYPE=Release
+                    -DCMAKE_BUILD_TYPE=Release \
+                    -DENABLE_WERROR=OFF
 
       - name: Derlemeyi Başlat (Make)
         working-directory: ./build
@@ -41,8 +41,8 @@ jobs:
       - name: Dosyaları Paketle ve Yükle (Artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: srsRAN-Project-Binaries
+          name: srsRAN-Project-Static-Binaries
           path: |
             build/apps/gnb/gnb
             build/apps/ue/ue
-          if-no-files-found: error # Dosya bulunamazsa hata ver ki nerede olduğunu görelim
+          if-no-files-found: error
